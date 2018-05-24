@@ -1,2 +1,33 @@
-# Template-data-acquisition-program-in-Python
-This module provides an template data acquisition class (called "Experiment") written in Python that can be quickly derived to build custom acquisition programs
+# Template data acquisition program in Python
+This module provides an template data acquisition class (called "Experiment") written in Python that can be quickly derived to build custom acquisition programs.
+
+# Background
+After writing several Python acquisition programs, I realize they share a lot of similarities. For instance, they all have very similar data saving structures, plotting schemes, exception handling criteria, etc. So it occurs to me that I can write some template program, from which one can quickly develop their own Python acquisition programs with minimum effort.
+
+# Ideology
+The idea behind is quite simple. A simple acquisition task (I’m not referring to those complicated applications with dozens of entangled states) usually consists of three major steps: i) set up the equipment, ii) turn some knobs and monitor the readings, and iii) save the data together with measurement conditions. The second step usually means the greatest effort and in most sceneries can be simplified to the following form: one sweeps some independent variables (x1, x2, …), and measures the responses of the dependent variables (y1, y2, …). A simple math expression would be:
+
+**y1, y2 … = f(x1, x2 … | p1, p2 …)**
+
+Here p1, p2 … are the parameters that do not change during the measurement. Some of these parameters require setting processes and all of them need to be saved in the final results.
+
+# How to use
+The example.py provides a nice example about how to derive from my Experiment class and create your own test programs. Of course, I don’t expect one to have a Keithley source meter attached to their computers while he/she is reading this instruction. So dummy data are generated instead. To build your own test programs, your responsibility is to build a few essential attributes in your derived class. The following provides a comprehensive checklist:
+1.	**responses**: a list of dependent variable names (responses), e.g., [“resistance”, “voltage”]. Note space is not allowed in the variable name as it is used to create the corresponding class attribute
+1.	**variables**: a list of independent variable names, e.g., [“magnetic set field”, “set angle”]. Similarly, space is not allowed in the name as a class attribute will be created
+1.	**varLists**: a list of lists. Each element contains the actual values of the corresponding variable to sweep 
+1.	**ptsPerMeasure**: int. This parameter defines how many points will be generate per measurement step. For some say DAQ related operations, multiple data points might need to be generated and uploaded to the instrument simultaneously. On the other hand, multiple readings may also need to be retrieved from the instrument
+1.	**skipVarSetIfSame**: a list of bool values with each element corresponding to one independent variable. It determines whether the value(s) of that specific variable needs to be reset at the beginning of each measurement step if its value(s) turns out to be the same as in the last iteration. This is neat if you want some variables to hold their values to the next iteration without going through the setting process (which under a certain circumstances might be quite time-consuming)
+1.	**parameters**: a dictionary. There are two types – one treated as class properties and the other treated as class variables. The former requires getters and setters while the latter does not. The property type is handy for those that need to go through instrument setting/reading, e.g., the actual dc current used during the entire measurement. The latter is good for some miscellaneous parameters, e.g., your name. Note the property type parameters have two version – one set version and one read version. This is because for some parameters, the read values are not guaranteed to be exactly the same as the set values. The set version will always be saved to the header of the saved data file, while the read version will only be saved if some difference from the set version is detected. If one decides the set/read discrepancy is ignorable, one might simply return the set value(s) in the property getter
+1.	**plotAxes**: a list of lists. Its length determines the number of matplotlib subplots to be generated. The axes of each subplot is defined by the corresponding list element. For instance, if it is required that the first and second subplots are resistance versus set angle and voltage versus set angle, respectively, one can simply write [[“resistance”, “set angle”], [“voltage”, “set angle”]
+1.	**plotLabels**: a list of strings or a list of tuples containing multiple strings. The length must match that of the plotAxes. This parameter tells the program what variable(s) will be used for each subplot. If the element is a tuple of multiple variables, then all variables within the tuple will be concatenated to generate one single plot label (in a smart way of course)
+1.	**fileName, folderName, basePath**: these three parameters determine where the data will be save. Basically a new fold (@folderName) will be created inside the base folder (@basePath), where all data files (named fileName) will be saved. In addition, a log entry will be appended to the log file that exists in the basePath. If it’s not already there, a new log file will be created
+1.	Here come some dirty work, which I unfortunately cannot help – you need to write the getters and setters for all dependent and independent variables, as well as property type parameters. These getters and setters are used to set/sweep the variables and take the measurement of the dependent variables, which is essential for the program to function smoothly
+1.	The following three function need to be overwritten. If you find out one is truly trivial, just overwrite it and pass 
+    1.	**createLogEntry** – add one entry to the log file about the current measurement statistics
+    1.	**configInstrument** – configure the instrument, request some system resources
+    1.	**closeInstrument** – close the instrument, release resources
+1.	A final note: some of the variables may not be exactly the same as their set values. For instance, the actual magnetic field may differ from the set value. If the actual value is indispensable, one trick is to add another dependent variable say “magnetic_field_read” and the associated property getter
+
+# Under the hood
+The Experiment class consists of three parts: i) the major part that deals with variable space walking, independent variable setting, dependent variable reading, etc.; ii) one keyboard listener that runs in a separate thread and deals with keyboard events such as pause and stop; ii) one child progress that initially generates a plot, then takes the data from the shared queue and updates the plot. The core part of part i consists of a DFS iterator that walks through the variable space (currently implemented in the recursive format, but an iterative format might be more efficient).
