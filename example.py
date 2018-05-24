@@ -4,7 +4,6 @@ from Experiment
 """
 
 import numpy as np
-import re
 from experiment import Experiment
 
 
@@ -36,8 +35,8 @@ class TestExperiment(Experiment):
     def createLogEntry(self):
         entry = {}
         entry["runID"] = self.getRunID()
-        entry["start_time"] = re.search('[^.]+', str(self.getStartTime())).group()
-        entry["end_time"] = re.search('[^.]+', str(self.getEndTime())).group()
+        entry["start_time"] = self.getStartTime()
+        entry["end_time"] = self.getEndTime()
         entry["completed"] = self.getExperimentStatus()
         entry["test_run"] = "test_run" 
         return entry

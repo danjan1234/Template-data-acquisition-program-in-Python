@@ -188,13 +188,6 @@ class Experiment(object):
         for key in self.parameters:
             parametersRead[key] = getattr(self, key)
         return parametersRead
-    
-    @property
-    def pause(self):
-        return self._pause
-    @pause.setter
-    def pause(self, val):
-        self._pause = val
      
     def measure(self):
         """

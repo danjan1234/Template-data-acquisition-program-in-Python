@@ -9,6 +9,7 @@ import time
 import constants
 import datetime
 import os
+import re
 from pynput.keyboard import Listener
 from threading import Lock
 
@@ -64,7 +65,7 @@ class FileIO(object):
     """
     def __init__(self, fileName, folderName, basePath):
         self.markStartTime()
-        self.runID = self.generateRunID(self.startTime)
+        self.runID = self.generateRunID(self.startTimeObj)
         self.fileName = fileName
         self.fileName = self.runID + '_' + self.fileName
         self.folderName = folderName
@@ -75,10 +76,12 @@ class FileIO(object):
         self.filePath = os.path.join(self.folderPath, self.fileName)
     
     def markStartTime(self):
-        self.startTime = datetime.datetime.now()
+        self.startTimeObj =datetime.datetime.now()
+        self.startTime = re.search('[^.]+', str(self.startTimeObj)).group()
     
     def markEndTime(self):
-        self.endTime = datetime.datetime.now()
+        endTimeObj = datetime.datetime.now()
+        self.endTime = re.search('[^.]+', str(endTimeObj)).group()
     
     def generateHeader(self, header, columnNames):
         rlt = []
@@ -88,11 +91,11 @@ class FileIO(object):
         # Column names are included for convenience
         return '\r\n'.join(rlt) + '\r\n\r\n' + '\t'.join(columnNames)
     
-    def generateRunID(self, startTime):
-        return "{}-{}-{}_{}-{}-{}".format(startTime.year, 
-                            startTime.month, startTime.day,
-                            startTime.hour, startTime.minute, 
-                            startTime.second)
+    def generateRunID(self, startTimeObj):
+        return "{}-{}-{}_{}-{}-{}".format(startTimeObj.year, 
+                            startTimeObj.month, startTimeObj.day,
+                            startTimeObj.hour, startTimeObj.minute, 
+                            startTimeObj.second)
         
     def createLog(self, logFilepath, content):
         # Create the base path folder if it does not exist
