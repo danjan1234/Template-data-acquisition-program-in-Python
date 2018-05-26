@@ -14,7 +14,6 @@ import pandas as pd
 from plotter import Plotter
 from utilities import KeyboardListener, FileIO
 from pynput.keyboard import Listener
-from threading import Lock
 from multiprocessing import Process
 
 
@@ -55,8 +54,8 @@ class Experiment(object):
                     skipVarSetIfSame=[], ptsPerMeasure=1, parameters={}, 
                     plotAxes=[()], plotLabels=None, plotEngineeringFormat=True,
                     plotFigSize=(10,6), plotUpdateInterval=0.1, plotMarkerSize=3,
-                    keepFig=False, save=True, fileName="", folderName="", 
-                    basePath=""):
+                    plotLabelFormat=".0f", keepFig=False, save=True, 
+                    fileName="", folderName="", basePath=""):
         """
         ------------------------------------------------------------------------
         Arguments:
@@ -90,6 +89,8 @@ class Experiment(object):
         plotFigSize: tuple. Figure size
         plotUpdateInterval: float. This parameter affects the plot update interval
         plotMarkerSize: int. Plot marker size
+        plotLabelFormat: string. 
+            A format string used to control the plot label on display
         keepFig: bool, default=False. If true, the figure will be preserved 
             after the acquisition termintes
         save: bool, default=True. Save data
@@ -111,6 +112,7 @@ class Experiment(object):
         self._plotFigSize = plotFigSize
         self._plotUpdateInterval = plotUpdateInterval
         self._plotMarkerSize = plotMarkerSize
+        self._plotLabelFormat = plotLabelFormat
         self._keepFig = keepFig
         self._fileName = fileName
         self._folderName = folderName
@@ -133,8 +135,7 @@ class Experiment(object):
             self._skipVarSetIfSame = [False for _ in self._varibles]
         
         # Helper instances
-        self._lock = Lock()
-        self._keyboardListener = KeyboardListener(self._lock, None, save)
+        self._keyboardListener = KeyboardListener(None, save)
         self._fileIO = FileIO(fileName=fileName, folderName=folderName,
                             basePath=basePath)
         self._plotter, self._plotterProc = self._createPlotterProc()
@@ -154,9 +155,8 @@ class Experiment(object):
         
     def _createPlotterProc(self):
         saveFigPath = None
-        with self._lock:
-            if self._keyboardListener.saveFlag:
-                saveFigPath = self._fileIO.filePath[:-4] + self._figExtention
+        if self._keyboardListener.saveFlag:
+            saveFigPath = self._fileIO.filePath[:-4] + self._figExtention
         plotter = Plotter()
         proc = Process( target=plotter.plot, 
                         kwargs={'axesNames': self._plotAxes,
@@ -164,6 +164,7 @@ class Experiment(object):
                                 'engineeringFormat': self._plotEngineeringFormat,
                                 'figSize': self._plotFigSize,
                                 'markersize': self._plotMarkerSize,
+                                'plotLabelFormat': self._plotLabelFormat,
                                 'updateInterval': self._plotUpdateInterval,
                                 'saveFigPath': saveFigPath,
                                 'keepFig': self._keepFig
@@ -202,10 +203,9 @@ class Experiment(object):
                 self._testPause()
                 varArray = np.array([next(varGridIter) for _ in range(
                                                     self._ptsPerMeasure)])
-                with self._lock:
-                    if self._keyboardListener.stopFlag:
-                        self._completed = False
-                        break
+                if self._keyboardListener.stopFlag:
+                    self._completed = False
+                    break
                 self._setVaribles(varArray)
                 time.sleep(self.pause)
                 dataArray = np.concatenate((varArray, self._getResponses()), 
@@ -230,8 +230,7 @@ class Experiment(object):
     def _testPause(self):
         pauseFlag = True
         while pauseFlag:
-            with self._lock:
-                pauseFlag = self._keyboardListener.pauseFlag & ~self._keyboardListener.stopFlag
+            pauseFlag = self._keyboardListener.pauseFlag & ~self._keyboardListener.stopFlag
             if pauseFlag:        
                time.sleep(0.05)
     
@@ -322,12 +321,11 @@ class Experiment(object):
         """
         Save the log file and the measured data as text files
         """
-        with self._lock:
-            if self._keyboardListener.saveFlag:
-                print("Save data ...")
-                self._fileIO.markEndTime()
-                self._saveLog()
-                self._saveData()
+        if self._keyboardListener.saveFlag:
+            print("Save data ...")
+            self._fileIO.markEndTime()
+            self._saveLog()
+            self._saveData()
         
     def _saveLog(self):
         entry = self.createLogEntry()

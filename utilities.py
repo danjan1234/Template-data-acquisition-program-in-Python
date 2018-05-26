@@ -11,7 +11,7 @@ import datetime
 import os
 import re
 from pynput.keyboard import Listener
-from threading import Lock
+
 
 _logFileName = constants.FILE_IO.logFileName
 
@@ -20,11 +20,10 @@ class KeyboardListener(object):
     A keyboard event listener. The keyboard event is used to control the 
     program behavior such as stop, pause, toggle save
     """
-    def __init__(self, lock=Lock(), plotterObj=None, saveFlag=True):
+    def __init__(self, plotterObj=None, saveFlag=True):
         self.stopFlag = False
         self.pauseFlag= False
         self.saveFlag = saveFlag
-        self._lock = lock
         self._plotter = plotterObj
         
         self._keyboardListener = Listener(on_release=self._onRelease)
@@ -39,24 +38,23 @@ class KeyboardListener(object):
         """
         Keyboard release event callback function
         """
-        with self._lock:
-            if key == constants.FLOW_CTRL.togglePauseKey:
-                self.pauseFlag = not self.pauseFlag  
-                if self.pauseFlag:
-                    print("Program paused!")
-                else:
-                    print("Program resumed!")
-            elif key == constants.FLOW_CTRL.stopKey:
-                print("Stop requested ...")
-                if self._plotter is not None:
-                    self._plotter.addPoints(self._plotter.STOP_FLAG)
-                self.stopFlag = True
-                return False
-            elif key == constants.FLOW_CTRL.toggleSaveKey:
-                self.saveFlag = not self.saveFlag
-                if self._plotter is not None:
-                    self._plotter.addPoints(self._plotter.TOGGLE_SAVE)
-                print("Save flag is toggled to: {}".format(self.saveFlag))
+        if key == constants.FLOW_CTRL.togglePauseKey:
+            self.pauseFlag = not self.pauseFlag  
+            if self.pauseFlag:
+                print("Program paused!")
+            else:
+                print("Program resumed!")
+        elif key == constants.FLOW_CTRL.stopKey:
+            print("Stop requested ...")
+            if self._plotter is not None:
+                self._plotter.addPoints(self._plotter.STOP_FLAG)
+            self.stopFlag = True
+            return False
+        elif key == constants.FLOW_CTRL.toggleSaveKey:
+            self.saveFlag = not self.saveFlag
+            if self._plotter is not None:
+                self._plotter.addPoints(self._plotter.TOGGLE_SAVE)
+            print("Save flag is toggled to: {}".format(self.saveFlag))
 
 class FileIO(object):
     """

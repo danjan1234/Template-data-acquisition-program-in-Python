@@ -37,8 +37,8 @@ class Plotter(object):
                     labelNames = ['x1', 'x1', 'x1', 'x1'],
                     axisRange=(-1e-9, 1e-9, -1e-9, 1e-9), 
                     engineeringFormat=True, figSize=(10,6), ncols=None,
-                    markersize=5, updateInterval=0.1, saveFigPath=None, 
-                    keepFig=False, saveFlag=True):
+                    markersize=5, plotLabelFormat=".0f", updateInterval=0.1,
+                    saveFigPath=None, keepFig=False, saveFlag=True):
         """
         Wait the data sent to queue and send them to plot at a certain time
         interval
@@ -58,6 +58,8 @@ class Plotter(object):
                 number of columns of the plots. If None, this parameters will
                 be automatically determined
             markersize: int, default=5. Plot marker size
+            plotLabelFormat: string. 
+                A format string used to control the plot label on display
             updateInterval: float, default=0.1.
                 This parameter determines how often the figure shold be updated
             saveFigPath: path string, default=None.
@@ -77,6 +79,7 @@ class Plotter(object):
             self._labelNames = [None] * len(self._axesNames)
         self._style = self._styleGen()
         self._markersize = markersize
+        self._plotLabelFormat = plotLabelFormat
         self._saveFlag = saveFlag
         
         # Create plots
@@ -227,10 +230,10 @@ class Plotter(object):
                 else:
                     if not isinstance(labelName, list) and not isinstance(labelName, tuple):
                         labelVal = self._getLabelVal(data[labelName])
-                        label = labelName + '=' + str(labelVal)
+                        label = labelName + '=' + labelVal
                     else:
                         labelVal = [self._getLabelVal(data[x]) for x in labelName]
-                        label = [x + '=' + str(y) for x, y in zip(labelName, labelVal)]
+                        label = [x + '=' + y for x, y in zip(labelName, labelVal)]
                         label = ", ".join(label)
                 self._newLine(ax, style, label)
             self._updateSingleAxis(ax, data[xAxis], data[yAxis])
@@ -252,7 +255,7 @@ class Plotter(object):
             else:
                 if len(labelVal) > 5:
                     labelVal = "{}~{}".format(labelValMin, labelMax)
-        return labelVal
+        return format(labelVal,  self._plotLabelFormat)
     
     def _plotQueue(self, updateInterval):
         """
