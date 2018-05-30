@@ -15,13 +15,15 @@ from plotter import Plotter
 from utilities import KeyboardListener, FileIO
 from pynput.keyboard import Listener
 from multiprocessing import Process
+from threading import Thread, Lock
+from queue import Queue
 
 
 
 class Experiment(object):   
     """
     A template class that treats an experiment in the following manner: an
-    experiment measures the responds as a function of a list of given varibles 
+    experiment measures the responds as a function of a list of given variables 
     under a controlled condition defined by parameters:
         responds = f(variable lists, @ fixed parameters)
     
@@ -50,9 +52,10 @@ class Experiment(object):
     
     _figExtention = '.png'
     
-    def __init__(self, responses=[], varibles=[], varLists=[[]], 
+    def __init__(self, responses=[], variables=[], varLists=[[]], 
                     skipVarSetIfSame=[], ptsPerMeasure=1, parameters={}, 
-                    plotAxes=[()], plotLabels=None, plotEngineeringFormat=True,
+                    multiThreadReadWrite=False, plotAxes=[()], 
+                    plotLabels=None, plotEngineeringFormat=True,
                     plotFigSize=(10,6), plotUpdateInterval=0.1, plotMarkerSize=3,
                     plotLabelFormat=".0f", keepFig=False, save=True, 
                     fileName="", folderName="", basePath=""):
@@ -62,15 +65,15 @@ class Experiment(object):
         
         responses: list of strings.
             A list of responses (dependent variables) to be measured
-        varibles: list of strings. 
+        variables: list of strings. 
             A list of variables (independent variables) to be actively swept
         varLists: list of lists or other iterables.
-            Each element in varLists cooresponds to one varible
+            Each element in varLists cooresponds to one variable
         skipVarSetIfSame: list of bool. 
             This parameter determines the action to adopt when a variable has
             exactly the same value(s) as in the previous iteration. Each element
             cooresponds to one variable. If the element associted with a certain
-            variable is set to true, the set-varible step of this variable will
+            variable is set to true, the set-variable step of this variable will
             be skipped if its value has not changed since last iteration. This
             might save some time for set-then-hold variables
         ptsPerMeasure: int, default=1.
@@ -79,10 +82,16 @@ class Experiment(object):
             measured at once
         parameters: dictionary.
             The parameters that need to be set beforehand during the measurement
+        multiThreadReadWrite: bool
+            If true, then multiple threads will be created for read/write of
+            parameters, variables, and responses. Note most instrument read/write
+            are IO bound. Turning this option on allows for concurrent read/write
+            of multiple instrument. This option is still experimental. It's not 
+            guaranteed to work all the time
         plotAxes: list of tuples.
             The response-variable pairs to be plotted
         plotLabels: list of strings.
-            This parameter determines which dependent/independent varible will
+            This parameter determines which dependent/independent variable will
             be used as the label of each subplot
         plotEngineeringFormat: bool, default=True.
             Use engineering format for the label text
@@ -100,12 +109,13 @@ class Experiment(object):
         """
         # Memorize parameters
         self._responses = responses
-        self._varibles = varibles
+        self._variables = variables
         self._varLists = varLists
         self._skipVarSetIfSame = skipVarSetIfSame
-        self._columns = self._varibles + self._responses
+        self._columns = self._variables + self._responses
         self._ptsPerMeasure = max(1, int(ptsPerMeasure))
         self.parameters = parameters
+        self._multiThreadReadWrite = multiThreadReadWrite
         self._plotAxes = plotAxes
         self._plotLabels = plotLabels
         self._plotEngineeringFormat = plotEngineeringFormat
@@ -132,7 +142,7 @@ class Experiment(object):
         self._preVarArray = None
         self._ptsCount = 0
         if self._skipVarSetIfSame is None or len(self._skipVarSetIfSame) == 0:
-            self._skipVarSetIfSame = [False for _ in self._varibles]
+            self._skipVarSetIfSame = [False for _ in self._variables]
         
         # Helper instances
         self._keyboardListener = KeyboardListener(None, save)
@@ -140,6 +150,9 @@ class Experiment(object):
                             basePath=basePath)
         self._plotter, self._plotterProc = self._createPlotterProc()
         self._keyboardListener._plotter = self._plotter
+        if self._multiThreadReadWrite:
+            self._createThreads()
+            self._lock = Lock()
     
     def getRunID(self):
         return self._fileIO.runID      
@@ -177,17 +190,51 @@ class Experiment(object):
             raise Exception("The given base path is not an absolute path")
         if not isinstance(self.parameters, dict):
             raise Exception("The given parameter inputs are not in the form of dictionary")
-        if len(self._varibles) != len(self._varLists):
+        if len(self._variables) != len(self._varLists):
             raise Exception("The given variables and their settings are of different lengths")
-
+    
     def _setParameters(self):
+        if self._multiThreadReadWrite:
+            self._setParametersMultiThread()
+        else:
+            self._setParametersSingleThread()
+
+    def _setParametersSingleThread(self):
         for key, val in self.parameters.items():
             setattr(self, key, val)
+            
+    def _setParametersMultiThread(self):
+        threads = []
+        for key, val in self.parameters.items():
+            th = Thread(target=setattr, args=(self, key, val))
+            th.start()
+            threads.append(th)
+        for th in threads:
+            th.join()
     
     def _getParameters(self):
+        if self._multiThreadReadWrite:
+            return self._getParametersMultiThread()
+        else:
+            return self._getParametersSingleThread()
+    
+    def _getParametersSingleThread(self):
         parametersRead = {}
         for key in self.parameters:
             parametersRead[key] = getattr(self, key)
+        return parametersRead
+    
+    def _getParametersMultiThread(self):
+        threads = []
+        parametersRead = {}
+        for key in self.parameters:
+            def _getattr():
+                parametersRead[key] = getattr(self, key)
+            th = Thread(target=_getattr)
+            th.start()
+            threads.append(th)
+        for th in threads:
+            th.join()
         return parametersRead
      
     def measure(self):
@@ -238,9 +285,31 @@ class Experiment(object):
         if self._results is None:
             return
         return pd.DataFrame(self._results, columns=self._columns)
+   
+    def _createThreads(self):
+        # self._threads: variable / response name -> thread, queue
+        self._threads = {}
+        for variable in self._variables:
+            q = Queue()
+            th = Thread(target=self._setAttrQueue, args=(variable,), 
+                        daemon=True)
+            self._threads[variable] = th, q
+            th.start()
+        for response in self._responses:
+            q = Queue()
+            th = Thread(target=self._getAttrQueue, args=(response,), 
+                        daemon=True)
+            self._threads[response] = th, q
+            th.start()
             
     def _setVaribles(self, varArray):
-        for i, varible in enumerate(self._varibles):
+        if self._multiThreadReadWrite:
+            self._setVariblesMultiThread(varArray)
+        else:
+            self._setVariblesSingleThread(varArray)
+            
+    def _setVariblesSingleThread(self, varArray):
+        for i, variable in enumerate(self._variables):
             if (self._preVarArray is not None and varArray.shape == 
                                 self._preVarArray.shape and np.all(
                                 varArray[:, i] == self._preVarArray[:, i]) 
@@ -248,10 +317,49 @@ class Experiment(object):
                 continue
             val = varArray[:, i]
             val = val[0] if len(val) == 1 else val
-            setattr(self, varible, val)
+            setattr(self, variable, val)
         self._preVarArray = varArray
     
+    def _setVariblesMultiThread(self, varArray):
+        self._alreadySet = 0
+        shouldSet = 0
+        for i, variable in enumerate(self._variables):
+            if (self._preVarArray is not None and varArray.shape == 
+                                self._preVarArray.shape and np.all(
+                                varArray[:, i] == self._preVarArray[:, i]) 
+                                and self._skipVarSetIfSame[i]):
+                continue
+            val = varArray[:, i]
+            val = val[0] if len(val) == 1 else val
+            self._threads[variable][1].put(val)
+            shouldSet += 1
+        # Wait until all variable setters start
+        alreadySet = 0
+        while True:
+            with self._lock:
+                alreadySet = self._alreadySet
+            if alreadySet == shouldSet:
+                break
+            time.sleep(0.01)
+        self._preVarArray = varArray
+        
+    def _setAttrQueue(self, variable):
+        while True:
+            currQueue = self._threads[variable][1]
+            if currQueue.qsize() > 0:
+                val = currQueue.get()
+                setattr(self, variable, val)
+                with self._lock:
+                    self._alreadySet += 1
+            time.sleep(0.01)
+                    
     def _getResponses(self):
+        if self._multiThreadReadWrite:
+            return self._getResponsesMultiThread()
+        else:
+            return self._getResponsesSingleThread()
+                
+    def _getResponsesSingleThread(self):
         rlt = []
         for response in self._responses:
             currRlt = getattr(self, response)
@@ -259,15 +367,38 @@ class Experiment(object):
             rlt.append(currRlt)
         rltArray = np.array(rlt)
         return rltArray.T
+   
+    def _getResponsesMultiThread(self):
+        self._currRlt = {}
+        rlt = []
+        for response in self._responses:
+            self._threads[response][1].put(True)
+        # Wait until all responses to complete data collection
+        while len(self._currRlt) < len(self._responses):
+            time.sleep(0.01)
+        for response in self._responses:
+            currRlt = self._currRlt[response]
+            currRlt = [currRlt] if not hasattr(currRlt, '__iter__') else currRlt
+            rlt.append(currRlt)
+        rltArray = np.array(rlt)
+        return rltArray.T
         
+    def _getAttrQueue(self, response):
+        while True:
+            currQueue = self._threads[response][1]
+            if currQueue.qsize() > 0:
+                val = currQueue.get()
+                self._currRlt[response] = getattr(self, response)
+            time.sleep(0.01)
+    
     def _varGridIterator(self):
         """
-        Returns a DFS iterator through the varible lists
+        Returns a DFS iterator through the variable lists
         """
         return self._varGridIteratorHelper([])
         
     def _varGridIteratorHelper(self, stack):
-        if len(stack) == len(self._varibles):
+        if len(stack) == len(self._variables):
             yield list(stack)
             return
         
