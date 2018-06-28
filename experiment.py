@@ -68,16 +68,16 @@ class Experiment(object):
         variables: list of strings. 
             A list of variables (independent variables) to be actively swept
         varLists: list of lists or other iterables.
-            Each element in varLists cooresponds to one variable
+            Each element in varLists corresponds to one variable
         skipVarSetIfSame: list of bool. 
             This parameter determines the action to adopt when a variable has
             exactly the same value(s) as in the previous iteration. Each element
-            cooresponds to one variable. If the element associted with a certain
+            corresponds to one variable. If the element associated with a certain
             variable is set to true, the set-variable step of this variable will
             be skipped if its value has not changed since last iteration. This
             might save some time for set-then-hold variables
         ptsPerMeasure: int, default=1.
-            How many points will be generated and measured simultanuously. For
+            How many points will be generated and measured simultaneously. For
             DAQ application, one might need multiple points to generated and
             measured at once
         parameters: dictionary.
@@ -85,7 +85,7 @@ class Experiment(object):
         multiThreadReadWrite: bool
             If true, then multiple threads will be created for read/write of
             parameters, variables, and responses. Note most instrument read/write
-            are IO bound. Turning this option on allows for concurrent read/write
+            is IO bound. Turning this option on allows for concurrent read/write
             of multiple instrument. This option is still experimental. It's not 
             guaranteed to work all the time
         plotAxes: list of tuples.
@@ -101,7 +101,7 @@ class Experiment(object):
         plotLabelFormat: string. 
             A format string used to control the plot label on display
         keepFig: bool, default=False. If true, the figure will be preserved 
-            after the acquisition termintes
+            after the acquisition terminates
         save: bool, default=True. Save data
         fileName: string. The file name used for saving the measurement data
         folderName: string. The folder name where the data will be saved
